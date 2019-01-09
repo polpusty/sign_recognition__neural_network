@@ -1,0 +1,5 @@
+aiohttp==3.3.2
+aiohttp-devtools==0.10.1
+Pillow==5.1.0
+numpy==1.14.5
+scipy==1.1.0
