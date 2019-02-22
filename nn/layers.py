@@ -1,30 +1,40 @@
+import abc
+from functools import reduce
+
 import numpy as np
 from scipy.signal import convolve2d
 from skimage.measure import block_reduce
-from functools import reduce
 
-from nn.math_functions import relu, relu_prime
+from nn.math_functions import relu, relu_prime, softmax, softmax_prime
 
 rnd = np.random.RandomState(2)
 
 
-class Layer:
+class Layer(abc.ABC):
     def __init__(self):
         self.result = None
 
     def has_weights(self):
         return hasattr(self, 'weights')
 
+    @abc.abstractmethod
+    def forward(self, input_data):
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def backward(self, delta, input_data):
+        raise NotImplementedError
+
 
 class ConvolutionLayer(Layer):
-    def __init__(self, number_kernels, kernel_size, depth, input_size, padding=0):
+    def __init__(self, number_kernels, kernel_size, depth, padding=0):
         super(Layer, self).__init__()
         self.number_kernels = number_kernels
         self.kernel_size = kernel_size
         self.depth = depth
         self.padding = padding
 
-        self.weights = rnd.randn(number_kernels, depth, kernel_size, kernel_size) * np.sqrt(2.0 / input_size)
+        self.weights = rnd.randn(number_kernels, depth, kernel_size, kernel_size) / np.sqrt(number_kernels / 2.)
         self.biases = np.ones((number_kernels, 1)) * 0.01
 
     def forward(self, input_data):
@@ -44,8 +54,8 @@ class ConvolutionLayer(Layer):
 
         for number_kernel, kernel in enumerate(weights):
             for d in range(depth):
-                result[number_kernel] += convolve2d(input_with_padding[d], np.rot90(kernel[d], 2), mode='valid') + \
-                                         biases[number_kernel]
+                result[number_kernel] += convolve2d(input_with_padding[d], np.rot90(kernel[d], 2), 'valid')
+            result[number_kernel] += biases[number_kernel]
 
         return result
 
@@ -53,8 +63,8 @@ class ConvolutionLayer(Layer):
         return self.backward_convolutional_layer(delta, input_data)
 
     def backward_convolutional_layer(self, delta, input_data):
-        delta_biases = np.zeros_like(self.biases)
-        delta_weights = np.zeros_like(self.weights)
+        delta_biases = np.zeros(self.biases.shape)
+        delta_weights = np.zeros(self.weights.shape)
         weights_rotated = np.zeros((self.depth, self.number_kernels, self.kernel_size, self.kernel_size))
         delta = delta * relu_prime(delta)
         depth, height, width = input_data.shape
@@ -71,7 +81,7 @@ class ConvolutionLayer(Layer):
 
         delta_result = self.convolution(delta, weights_rotated, np.zeros_like(delta_biases), self.padding)
 
-        return delta_biases, delta_weights, delta_result
+        return delta_result, delta_biases, delta_weights
 
     def check_input_data(self, input_data):
         depth, width, height = input_data.shape
@@ -134,10 +144,11 @@ class DropoutLayer(Layer):
     def forward(self, input_data):
         self.result = self.dropout(input_data, self.mask)
 
-    def dropout(self, input_data, mask):
+    @staticmethod
+    def dropout(input_data, mask):
         return np.multiply(input_data, mask)
 
-    def backward(self, delta, input_data):
+    def backward(self, delta, _):
         return self.dropout(delta, self.mask)
 
 
@@ -152,29 +163,29 @@ class FlattenLayer(Layer):
     def flatten(input_data):
         return input_data.reshape(1, (reduce(lambda a, b: a * b, input_data.shape)))
 
-    @staticmethod
-    def backward(delta, input_data):
+    def backward(self, delta, input_data):
         delta = delta.reshape(input_data.shape)
         return delta
 
 
 class FullConnectedLayer(Layer):
-    def __init__(self, number_inputs, number_outputs):
+    def __init__(self, number_outputs, number_inputs, activation='relu'):
         super(Layer, self).__init__()
-        self.number_outputs = number_outputs
-        self.number_inputs = number_inputs
-
-        self.weights = rnd.randn(number_outputs, number_inputs) * np.sqrt(2.0 / number_outputs)
-        self.biases = np.ones((number_outputs, 1)) * 0.01
+        if activation == 'relu':
+            self.activation, self.activation_prime = relu, relu_prime
+        elif activation == 'softmax':
+            self.activation, self.activation_prime = softmax, softmax_prime
+        self.weights = rnd.randn(number_inputs, number_outputs) * np.sqrt(number_outputs / 2.)
+        self.biases = np.ones((1, number_outputs)) * 0.01
         self.f = None
 
     def forward(self, input_data):
-        self.f = np.dot(input_data.T, self.weights) + self.biases
-        self.result = relu(self.f)
+        self.f = np.dot(input_data, self.weights) + self.biases
+        self.result = self.activation(self.f)
 
-    def backward(self, error, input_data):
-        gradient = error * relu_prime(self.f)
-        delta_biases = gradient
-        delta_weights = np.dot(gradient, input_data)
-        gradient = np.dot(self.weights.T, gradient)
-        return gradient, delta_weights, delta_biases
+    def backward(self, delta, input_data):
+        delta_result = delta * self.activation_prime(delta)
+        delta_biases = delta_result
+        delta_weights = np.dot(input_data.T, delta_result)
+        delta_result = np.dot(delta_result, self.weights.T)
+        return delta_result, delta_biases, delta_weights
