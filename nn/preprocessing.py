@@ -10,4 +10,8 @@ def transform_image_to_array(size, image_stream):
     image = image.resize(size, Image.ANTIALIAS)
     stream = io.BytesIO()
     image.save(stream, "PNG")
-    return scipy.misc.imread(stream).swapaxes(2, 0)
+    return scipy.misc.imread(stream)
+
+
+def normalize_image(image):
+    return (image - image.min()) / (image.max() - image.min())
