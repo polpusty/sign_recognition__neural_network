@@ -88,38 +88,11 @@ class Convolution2d(BaseLayer):
             for d in range(self.depth):
                 delta_weights[number_kernel][d] = convolve2d(input_with_padding[d], delta[number_kernel][::-1, ::-1],
                                                              'valid')
-                # delta_result[d] += convolve2d(self.weights[number_kernel][d][::-1, ::-1], delta[number_kernel], 'full')
+                delta_result[d] += convolve2d(delta[number_kernel], self.weights[number_kernel][d], 'full')
 
             delta_biases[number_kernel] = np.sum(delta[number_kernel])
 
-        delta_result = self.convolutionBackward(delta, input_with_padding, self.weights, 1)
-
         return delta_result, delta_biases, delta_weights
-
-    def convolutionBackward(self, dconv_prev, conv_in, filt, s):
-        '''
-        Backpropagation through a convolutional layer.
-        '''
-        (n_f, n_c, f, _) = filt.shape
-        (_, orig_dim, _) = conv_in.shape
-        ## initialize derivatives
-        dout = np.zeros(conv_in.shape)
-        for curr_f in range(n_f):
-            # loop through all filters
-            curr_y = out_y = 0
-            while curr_y + f <= orig_dim:
-                curr_x = out_x = 0
-                while curr_x + f <= orig_dim:
-                    # loss gradient of filter (used to update the filter)
-                    # loss gradient of the input to the convolution operation (conv1 in the case of this network)
-                    dout[:, curr_y:curr_y + f, curr_x:curr_x + f] += dconv_prev[curr_f, out_y, out_x] * filt[curr_f]
-                    curr_x += s
-                    out_x += 1
-                curr_y += s
-                out_y += 1
-            # loss gradient of the bias
-
-        return dout
 
     def check_input_data(self, input_data):
         depth, width, height = input_data.shape
