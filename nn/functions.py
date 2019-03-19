@@ -18,5 +18,12 @@ def softmax_prime(x):
     return softmax(x) * (1 - softmax(x))
 
 
-def loss(label, result):
-    return 0.5 * np.sum((result - label) ** 2)
+def cross_entropy(result, label, eps=10 ** -9):
+    prediction = softmax(result)
+    return -np.log(prediction[0, label.argmax()] + eps)
+
+
+def cross_entropy_prime(result, label):
+    prediction = softmax(result)
+    prediction[0, label.argmax()] -= 1
+    return prediction

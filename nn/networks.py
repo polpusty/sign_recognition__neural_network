@@ -1,21 +1,13 @@
-import random
 from multiprocessing import Pool
 
-from numpy import zeros_like, zeros
+from numpy import zeros_like, zeros, random
 from tornado import gen
 
-from nn.math_functions import loss
+from nn.functions import cross_entropy, cross_entropy_prime
 from nn.preprocessing import transform_image_to_array, normalize_image
 
 
 class Network:
-    """
-    :type layers: list[nn.layers.*]
-    :type classes_list: list[dict]
-    :type size_input_image: (int, int)
-    :type optimizer: nn.optimizers.Optimizer
-    """
-
     def __init__(self, layers_list, classes_list, size_input_image, optimizer):
         self.layers = layers_list
         self.classes_list = classes_list
@@ -35,7 +27,7 @@ class Network:
 
     def backward(self, image, label):
         result = self.forward(image)
-        error = label - result
+        error = cross_entropy_prime(result, label)
         delta_biases, delta_weights = self.backward_propagation(image, error)
         return delta_biases, delta_weights, result, label
 
@@ -55,7 +47,7 @@ class Network:
         return correction_biases, correction_weights
 
     def get_perfect_output_for_class(self, number_class):
-        result = zeros(len(self.classes_list))
+        result = zeros((len(self.classes_list),))
         result[number_class] = 1.0
         return result
 
@@ -69,7 +61,8 @@ class Network:
     def prepare_image(self, image):
         return normalize_image(transform_image_to_array(self.size_input_image, image).swapaxes(2, 0))
 
-    def train(self, data, number_epochs, batch_len):
+    def fit(self, data, number_epochs, batch_len):
+        training_data = data
         training_data = self.prepare_data_for_training(data)
         for epoch in range(number_epochs):
             random.shuffle(training_data)
@@ -77,7 +70,7 @@ class Network:
             error = 0
             for index, batch in enumerate(batches):
                 error += self.train_batch(batch)
-                print(f"Epoch: {epoch} Batch {index}/{len(batches)} Error {error/index}")
+                print(f"Epoch: {epoch} Batch {index}/{len(batches)} Error {error / index}")
             print(f"ERROR: {error / len(batches)}")
 
     def get_backwards(self, batch):
@@ -98,7 +91,7 @@ class Network:
 
         self.optimizer.optimize(self.layers, gradients_weights, gradients_biases, length_batch)
 
-        return loss(label, result)
+        return cross_entropy(result, label)
 
 
 class AsyncNetwork(Network):
@@ -108,7 +101,7 @@ class AsyncNetwork(Network):
     async def get_backwards(self, batch):
         return await gen.multi([self.backward(image, label) for image, label in batch])
 
-    async def train(self, data, number_epochs, batch_len):
+    async def fit(self, data, number_epochs, batch_len):
         training_data = self.prepare_data_for_training(data)
         for epoch in range(number_epochs):
             random.shuffle(training_data)
@@ -116,7 +109,7 @@ class AsyncNetwork(Network):
             error = 0
             for index, batch in enumerate(batches):
                 error += await self.train_batch(batch)
-                print(f"Epoch: {epoch} Batch {index}/{len(batches)} Error {error/(index+1)}")
+                print(f"Epoch: {epoch} Batch {index}/{len(batches)} Error {error / (index + 1)}")
             print(f"ERROR: {error / len(batches)}")
 
     async def train_batch(self, batch):
@@ -134,7 +127,7 @@ class AsyncNetwork(Network):
 
         self.optimizer.optimize(self.layers, gradients_weights, gradients_biases, length_batch)
 
-        return loss(label, result)
+        return cross_entropy(result, label)
 
 
 class MultiProcessingNetwork(Network):
@@ -185,4 +178,4 @@ class MultiProcessingNetwork(Network):
 
         self.optimizer.optimize(self.layers, gradients_weights, gradients_biases, length_batch)
 
-        return loss(label, result)
+        return cross_entropy(label, result)

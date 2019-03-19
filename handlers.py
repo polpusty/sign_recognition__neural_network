@@ -3,7 +3,7 @@ import json
 from tornado import ioloop, web
 
 from api import ApiClient
-from nn.models import VGGNet, LeNet
+from nn.models import LeNet
 
 
 class NetworkTrainHandler(web.RequestHandler):
@@ -20,8 +20,9 @@ class NetworkTrainHandler(web.RequestHandler):
     async def train_network(self, network_id):
         network_data = await self.client.get_network_data(network_id)
         training_data = await self.client.get_training_data(network_data['collections'])
-        network = LeNet.get_network(network_data['collections'], (32, 32))
-        await network.train(training_data, 15, 6)
+        network = LeNet.get_network(list(map(lambda collection: collection['class_code'], network_data['collections'])),
+                                    (32, 32))
+        await network.fit(training_data, 150, 15)
 
     def data_received(self, chunk):
         return chunk
