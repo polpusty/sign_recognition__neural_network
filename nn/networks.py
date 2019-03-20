@@ -62,7 +62,6 @@ class Network:
         return normalize_image(transform_image_to_array(self.size_input_image, image).swapaxes(2, 0))
 
     def fit(self, data, number_epochs, batch_len):
-        training_data = data
         training_data = self.prepare_data_for_training(data)
         for epoch in range(number_epochs):
             random.shuffle(training_data)

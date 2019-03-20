@@ -1,6 +1,5 @@
 import io
 
-import numpy
 import scipy.misc
 from PIL import Image
 

@@ -1,4 +1,3 @@
-import tr.models
 from nn.functions import *
 from nn.layers import *
 from nn.networks import MultiProcessingNetwork, AsyncNetwork
@@ -52,12 +51,5 @@ class LeNet:
             Activation(relu, relu_prime),
             FullConnected(2, 84),
         ], classes, size, AdamOptimizer(0.001, 0.9, 0.999, 10 ** -8))
-
-        # net = tr.models.LeNet.get_network([1, 2], (2, 2))
-        #
-        # for i, l in enumerate(net2.layers):
-        #     if l.has_weights():
-        #         l.weights = net.layers[i].weight.detach().numpy()
-        #         l.biases = net.layers[i].bias.detach().numpy()
 
         return net2
