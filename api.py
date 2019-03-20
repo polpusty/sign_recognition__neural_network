@@ -19,7 +19,7 @@ class ApiClient:
         for collection in collections:
             for image_data in collection['images']:
                 image = await self.get_image(image_data['image'])
-                training_data.append((image, collection))
+                training_data.append((image, collection['class_code']))
         return training_data
 
     async def get_image(self, image_url):
