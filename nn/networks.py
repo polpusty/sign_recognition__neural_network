@@ -3,16 +3,18 @@ from multiprocessing import Pool
 from numpy import zeros_like, zeros, random
 from tornado import gen
 
-from nn.functions import cross_entropy, cross_entropy_prime
+from api import ApiClient
+from nn.functions import cross_entropy, cross_entropy_prime, softmax
 from nn.preprocessing import transform_image_to_array, normalize_image
 
 
 class Network:
-    def __init__(self, layers_list, classes_list, size_input_image, optimizer):
+    def __init__(self, layers_list, classes_list, size_input_image, optimizer, operation_data, api_url):
         self.layers = layers_list
         self.classes_list = classes_list
         self.size_input_image = size_input_image
         self.optimizer = optimizer
+        self.operation_data = operation_data
 
     def forward(self, input_data):
         """
@@ -61,16 +63,20 @@ class Network:
     def prepare_image(self, image):
         return normalize_image(transform_image_to_array(self.size_input_image, image).swapaxes(2, 0))
 
-    def fit(self, data, number_epochs, batch_len):
+    def fit(self, data, number_epochs, batch_len, client=None):
         training_data = self.prepare_data_for_training(data)
+
         for epoch in range(number_epochs):
             random.shuffle(training_data)
             batches = [training_data[i:i + batch_len] for i in range(0, len(training_data), batch_len)]
             error = 0
             for index, batch in enumerate(batches):
                 error += self.train_batch(batch)
-                print(f"Epoch: {epoch} Batch {index}/{len(batches)} Error {error / index}")
             print(f"ERROR: {error / len(batches)}")
+
+    def predict(self, image):
+        image_array = self.prepare_image(image)
+        return softmax(self.forward(image_array))
 
     def get_backwards(self, batch):
         return [self.backward(image, label) for image, label in batch]
@@ -100,16 +106,24 @@ class AsyncNetwork(Network):
     async def get_backwards(self, batch):
         return await gen.multi([self.backward(image, label) for image, label in batch])
 
-    async def fit(self, data, number_epochs, batch_len):
+    async def update_operations(self, client, training_progress, status="pending"):
+        self.operation_data = await client.update_operation(self.operation_data, training_progress, status)
+
+    async def fit(self, data, number_epochs, batch_len, client=None):
         training_data = self.prepare_data_for_training(data)
+        training_progress = []
         for epoch in range(number_epochs):
             random.shuffle(training_data)
             batches = [training_data[i:i + batch_len] for i in range(0, len(training_data), batch_len)]
             error = 0
             for index, batch in enumerate(batches):
                 error += await self.train_batch(batch)
-                print(f"Epoch: {epoch} Batch {index}/{len(batches)} Error {error / (index + 1)}")
+                if index % 10 == 0:
+                    training_progress.append({"name": f'Epoch {epoch}', "predict": error / (index + 1)})
+                    await self.update_operations(client, training_progress)
+                    print(f"Epoch: {epoch} Batch {index}/{len(batches)} Error {error / index}")
             print(f"ERROR: {error / len(batches)}")
+        await self.update_operations(client, training_progress, status="finished")
 
     async def train_batch(self, batch):
         gradients_weights = dict((l, zeros_like(l.weights)) for l in self.layers if l.has_weights())

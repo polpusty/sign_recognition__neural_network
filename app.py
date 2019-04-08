@@ -1,6 +1,6 @@
 from tornado import web, ioloop
 
-from handlers import NetworkTrainHandler
+from handlers import NetworkTrainHandler, NetworkPredictHandler
 
 
 def make_app():
@@ -10,10 +10,11 @@ def make_app():
     }
     return web.Application([
         (r"/train/", NetworkTrainHandler),
+        (r"/predict/", NetworkPredictHandler),
     ], **settings)
 
 
 if __name__ == '__main__':
     app = make_app()
-    app.listen(8080)
+    app.listen(80)
     ioloop.IOLoop.current().start()

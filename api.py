@@ -1,7 +1,6 @@
 import json
-import mimetypes
-import uuid
 
+import requests
 from tornado import httpclient
 
 
@@ -16,64 +15,71 @@ class ApiClient:
         response = await self.client.fetch(url)
         return json.loads(response.body)
 
+    async def get_network(self, network_data=None, network_id=None):
+        if network_data is None:
+            network_data = await self.get_network_data(network_id)
+
+        url = f'{self.api_url}{network_data["trained"]}'
+        response = await self.client.fetch(url)
+        return response.body
+
+    async def update_network(self, network, **kwargs):
+        if 'trained' in kwargs:
+            raise httpclient.HTTPClientError("Use `upload_network` method")
+        url = f'{self.api_url}/networks/{network["_id"]}/'
+        headers = {'Content-Type': 'application/json',
+                   'If-Match': network['_etag']}
+        body = json.dumps(kwargs)
+        response = await self.client.fetch(url, raise_error=False, method='PATCH', body=body, headers=headers)
+        print(response.body)
+        return json.loads(response.body)
+
     async def get_training_data(self, collections):
         training_data = []
         for collection in collections:
             for image_data in collection['images']:
-                image = await self.get_image(image_data['image'])
+                image = await self.get_image(image_data=image_data)
                 training_data.append((image, collection['class_code']))
         return training_data
 
-    async def get_image(self, image_url):
-        url = f'{self.api_url}{image_url}'
+    async def get_image_data(self, image_id):
+        url = f'{self.api_url}/images/{image_id}/'
+        response = await self.client.fetch(url)
+        return json.loads(response.body)
+
+    async def get_image(self, image_data=None, image_id=None):
+        if image_data is None:
+            image_data = await self.get_image_data(image_id)
+
+        url = f'{self.api_url}{image_data["image"]}'
         response = await self.client.fetch(url)
         return response.body
 
-    async def add_operation(self, network_id, step=0.01):
+    async def add_operation(self, network_id, step=None, status="started"):
+        if step is None:
+            step = []
         url = f'{self.api_url}/operations'
         headers = {'Content-Type': 'application/json'}
         body = json.dumps({'name': f'train{network_id}',
                            'network': network_id,
-                           'step': step})
+                           'status': status,
+                           'step': json.dumps(step)})
         response = await self.client.fetch(url, method='POST', body=body, headers=headers)
+        return json.loads(response.body)
+
+    async def update_operation(self, operation_data, training_progress, status="pending"):
+        url = f'{self.api_url}/operations/{operation_data["_id"]}'
+        headers = {'Content-Type': 'application/json',
+                   'If-Match': operation_data['_etag']}
+        body = json.dumps({'step': json.dumps(training_progress),
+                           'status': status})
+        response = await self.client.fetch(url, method='PATCH', body=body, headers=headers)
         return json.loads(response.body)
 
     async def upload_network(self, network_data, network):
         url = f'{self.api_url}/networks/{network_data["_id"]}/'
-        files = {'trained': (f'{network_data["_id"]}.bin', str(network))}
-        boundary = uuid.uuid4().hex
-        body = self.encode_form_data(files=files, boundary=boundary)
-        headers = {'If-Match': network_data['_etag'],
-                   'Content-Type': f'multipart/form-data; boundary={boundary}'}
+        files = [('trained', (f'{network_data["_id"]}.bin', network, 'binary'))]
+        headers = {'If-Match': network_data['_etag']}
 
-        response = await self.client.fetch(url, method='PATCH', body=body, headers=headers, raise_error=False)
-        return response.body
-
-    def encode_form_data(self, files=None, fields=None, boundary=''):
-        if fields is None:
-            fields = {}
-        if files is None:
-            files = {}
-        lines = []
-
-        for key, value in fields.items():
-            lines.append(f'--{boundary}')
-            lines.append(f'Content-Disposition: form-data; name="{key}"')
-            lines.append('')
-            lines.append(value)
-
-        for key, (filename, value) in files.items():
-            lines.append(f'--{boundary}')
-            lines.append(f'Content-Disposition: form-data; name="{key}"; filename="{filename}"')
-            lines.append(f'Content-Type: {self.get_content_type(filename)}')
-            lines.append('')
-            lines.append(value)
-
-        lines.append(f'--{boundary}--')
-        lines.append('')
-
-        return '\r\n'.join(lines)
-
-    @staticmethod
-    def get_content_type(filename):
-        return mimetypes.guess_type(filename)[0] or 'binary'
+        response = requests.patch(url, files=files, headers=headers)
+        return response.text
